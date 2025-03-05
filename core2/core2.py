@@ -28,6 +28,11 @@ homeDir = os.getcwd()
 
 INSTALL_FOLDER = "cpm"
 
+if os.path.exists("cpm"):
+    pass
+else:
+    os.mkdir("cpm")
+
 sysDirs = ["sys", "boot", "opt", "root", "bin", "sbin", "lib32", "home",
            "media", "usr", "dev", "tmp", "srv", "libx32", "lib64", "etc", 
            "var", "lib", "proc", "mnt", "run"]
@@ -94,11 +99,12 @@ def reset_value(value_name, value):
 
 #Configurations
 PS1 = get_or_add_value("PS1", "~ €")
+shell_ps1 = PS1 + " "
 USER = get_or_add_value("USER", getpass.getuser())
 UWP = get_value("UWP")
 name_colour = get_or_add_value("NAMECOLOUR", "\033[35m")
 WELCOME = get_or_add_value("WELCOME", "True")
-VERSION = get_or_add_value("VERSION", "0.0.1")
+VERSION = get_or_add_value("VERSION", "0.0.3")
 REGION = get_or_add_value("REGION", "US")
 
 #Encryption and passwords
@@ -158,60 +164,83 @@ def show_welcome():
             current_time = datetime.now().strftime("%m/%d/%Y %H:%M")
         print(f"Hello, {name_colour}{USER}{colours.reset()}!")
         print("------")
-        print(f"Core 2 Version: v{VERSION}")
+        print(f"{colours.cyan()}Core{colours.magenta()}2{colours.reset()} Version: {colours.grey()}{VERSION}{colours.reset()}")
         print(f"Date and time: {current_time}")
         print("------")
 
 def cpm_install_package(repo_name):
-    old = os.getcwd()
+    exists, repo = cpm_locate_package(repo_name)
+    
+    if not exists:
+        try:
+            old = os.getcwd()
 
-    dst_folder = f"{homeDir}/cpm/{repo_name}"
-    os.makedirs(dst_folder)
+            url = f"https://github.com/TriTechX/{repo_name}/archive/refs/heads/main.zip"
+            response = requests.get(url)
 
-    url = f"https://github.com/TriTechX/{repo_name}/archive/refs/heads/main.zip"
-    response = requests.get(url)
+            if response.status_code == 200:
 
-    if response.status_code == 200:
-        with zipfile.ZipFile(io.BytesIO(response.content)) as zip_ref:
-            zip_ref.extractall(".temp")
+                with zipfile.ZipFile(io.BytesIO(response.content)) as zip_ref:
+                    zip_ref.extractall(".temp")
 
-        os.chdir(f".temp/{repo_name}-main")
+                os.chdir(f".temp/{repo_name}-main")
 
-        contents = os.listdir(os.getcwd())
+                contents = os.listdir(os.getcwd())
 
-        if "meta.json" in contents:
-            with open("meta.json", "r") as f:
-                data = json.load(f)
+                if "meta.json" in contents:
+                    with open("meta.json", "r") as f:
+                        data = json.load(f)
 
-                requirements = data["requirements"]
-                linuxRequirements = data["linuxrequirements"]
-            print(os.getcwd())
-            for item in os.listdir(os.getcwd()):
-                src_path = os.path.join(os.getcwd(), item)
-                dst_path = os.path.join(dst_folder, item)
+                        requirements = data["requirements"]
+                        linuxRequirements = data["linuxrequirements"]
+                        package_name = data["package_name"]
+                        python = data["python"]
 
-                shutil.move(src_path, dst_path)
-                
-            os.chdir(old)
-            shutil.rmtree(".temp")
+                    dst_folder = f"{homeDir}/cpm/{package_name}"
+                    os.makedirs(dst_folder)
+                    print("------")
+                    for item in os.listdir(os.getcwd()):
+                        src_path = os.path.join(os.getcwd(), item)
+                        dst_path = os.path.join(dst_folder, item)
 
-            os.system(f"pip install -r {homeDir}/cpm/{repo_name}/{requirements}")
+                        shutil.move(src_path, dst_path)
 
-            if linuxRequirements:
-                os.system("sudo apt update")
-                for item in linuxRequirements:
-                    os.system(f"sudo apt install {item} -y")
-            print("------")
-            print(f"{colours.green()}Package '{repo_name}' installed successfully!{colours.reset()}")     
-            print("------")
-            return True
-        else:
-            os.chdir(old)
-            return None
+                        if os.path.isfile(dst_path):
+                            print(f"Extracted: {item} -> {dst_folder}")
+                        else:
+                            print(f"Extracted: {colours.bold()}{item}{colours.reset()}/ -> {dst_folder}")
+
+                    os.chdir(old)
+                    shutil.rmtree(".temp")
+                    if python == "True":
+                        os.system(f"pip install -r {homeDir}/cpm/{package_name}/{requirements}")
+
+                    if linuxRequirements:
+                        os.system("sudo apt update")
+                        for item in linuxRequirements:
+                            os.system(f"sudo apt install {item} -y")
+                    
+                    print("------")
+                    print(f"{colours.green()}Package '{repo_name}' installed successfully!{colours.reset()}")     
+                    print("------")
+                    return True
+                else:
+                    os.chdir(old)
+                    return None
+            else:
+                os.chdir(old)
+                if response.status_code == 404:
+                    print(f"{response.status_code}: This repository does not exist.")
+                else:
+                    print(response.status_code)
+        
+                return response.status_code
+        except Exception as e:
+            print(f"Error: {e}")
     else:
-        os.chdir(old)
-        return response.status_code
-
+        print("Package already installed.")
+        return None
+    
 def cpm_get_meta(repo_name):
     try:
         url = f"https://raw.githubusercontent.com/TriTechX/{repo_name}/main/meta.json"
@@ -225,10 +254,8 @@ def cpm_get_meta(repo_name):
         return response.status_code
     
 def get_local_meta_value(module_name, value):
-
     with open(f"{homeDir}/cpm/{module_name}/meta.json", "r") as f:
         data = json.load(f)
-
     if data:
         return data[value]
     else:
@@ -245,23 +272,90 @@ def cpm_uninstall_package(module_name):
         print(f"'{module_name}' will be uninstalled.")
 
         temp = input(shell_ps1)
+        print("------")
 
-        if temp.lower() in ["y", "yes"]:
+        if confirm_response():
             print(f"{colours.red()}Removing '{module_name}'...{colours.reset()}")
             shutil.rmtree(pathName)
             print(f"{colours.green()}'{module_name}' has been removed.{colours.reset()}")
+        else:
+            print(f"{colours.red()}Action cancelled{colours.reset()}")
         return True
     else:
         print(f"{colours.red()}The module '{module_name}' is not installed.{colours.reset()}")
         return None
 
 def cpm_fix():
-    shutil.rmtree(f"{homeDir}/.temp")
-    print("Broken packages cleared.")
+    try:
+        shutil.rmtree(f"{homeDir}/.temp")
+        print("Broken packages cleared.")
+    except FileNotFoundError:
+        print("You hold no broken packages.")
+
+def cpm_locate_package(packageName):
+    installedPackages = os.listdir(f"{homeDir}/cpm")
+
+    if installedPackages:
+        for package in installedPackages:
+            temp = get_local_meta_value(package, "repo_name")
+            if temp == packageName:
+                exists = True
+                break
+            else:
+                exists = False
+    else:
+        exists = False
+        temp = None
+
+    return exists, temp
+
+def cpm_purge_all():
+    try:
+        packageDir = f"{homeDir}/cpm"
+        packages = os.listdir(packageDir)
+
+        if packages:
+            for item in packages:
+                delete_path = os.path.join(packageDir, item)
+                print(f"Removed '{delete_path}'")
+                shutil.rmtree(delete_path)
+
+            return True
+        else:
+            print("There were no packages to remove.")
+            return False
+    except Exception as e:
+        print(f"{e}")
+        return False
+
+def cpm_scan_packages():
+    try:
+        old = os.getcwd()
+        packageDir = f"{homeDir}/cpm"
+
+        packageList = os.listdir(packageDir)
+
+        if packageList:
+            packages = []
+
+            for package in packageList:
+                packages.append(get_local_meta_value(package, "repo_name"))
+
+            return packages
+        else:
+            return False
+    except:
+        return False
+
+def confirm_response():
+    temp = input("(y/n) " + shell_ps1)
+
+    if temp.lower().strip(" ") in ["y", "yes"]:
+        return True
+    else:
+        return False
         
 show_welcome()
-
-shell_ps1 = PS1 + " "
 
 commands = {
     "clear": lambda: clear_terminal(),
@@ -299,8 +393,7 @@ def remove_password():
     if UWP == "True":
         print(f"Are you sure you want to remove the password?")
 
-        temp = input(shell_ps1)
-        if temp.lower().strip() in ["y", "yes"]:
+        if confirm_response():
             reset_value("PASSENC", "None")
             reset_value("UWP", "False")
             print("Password deactivated.")
@@ -354,7 +447,7 @@ def convert_size(bytes):
         suffix = suffixes[power]
 
         if power > 0:
-            size = round(bytes/1024*power,1)
+            size = round(bytes/1024**power,1)
         else:
             size = bytes
         
@@ -424,10 +517,11 @@ def use_pip():
         print("USAGE: pip <args> <package>\nInstalls packages for use with Python applications.")
 
 def use_cpm():
+    old = os.getcwd()
     if args:
         if args[0] == "install":
             if len(args) > 1:
-                cpm_install_package(args[1]) 
+                cpm_install_package(args[1])
             else:
                 print("USAGE: cpm <args> <package>\nInstalls packages using the Core package manager repository.")
         
@@ -448,13 +542,48 @@ def use_cpm():
         
         elif args[0] == "fix":
             cpm_fix()
+        
+        elif args[0] == "purge":
+
+            if len(args) == 1:
+                print("This will remove all packages installed with cpm.")
+                if confirm_response():
+                    cpm_purge_all()
+                else:
+                    print(f"{colours.red()}Action cancelled.{colours.reset()}")
+            else:
+                print("USAGE: cpm <args> <package>\nInstalls packages using the Core package manager repository.")
+        
+        elif args[0] == "list":
+            list = cpm_scan_packages()
+
+            if list:
+                for item in list:
+                    print(item)
+            else:
+                print("There are no installed packages.")
+            
         else:
             print("USAGE: cpm <args> <package>\nInstalls packages using the Core package manager repository.")
     else:
         print("USAGE: cpm <args> <package>\nInstalls packages using the Core package manager repository.")
 
+def retrieve_config_values():
+    PS1 = get_value("PS1")
+    shell_ps1 = PS1 + " "
+    UWP = get_value("UWP")
+    PASSENC = get_value("PASSENC")
+    NAMECOLOUR = get_value("NAMECOLOUR")
+    WELCOME = get_value("WELCOME")
+    VERSION = get_value("VERSION")
+    REGION = get_value("REGION")
+    USER = get_value("USER")
+
+    return PS1, shell_ps1, UWP, PASSENC, NAMECOLOUR, WELCOME, VERSION, REGION, USER
 while True:
     args = None
+
+    PS1, shell_ps1, UWP, PASSENC, NAMECOLOUR, temp, VERSION, REGION, USER = retrieve_config_values()
 
     WELCOME = get_or_add_value("WELCOME", "True")
     cwd = os.getcwd()
@@ -483,8 +612,6 @@ while True:
                 try:
                     externalPath = f"{execPath}/{mainLocation.split("/")[0]}"
                     os.chdir(externalPath)
-                    print(os.getcwd())
-                    print(os.listdir())
                     subprocess.run(["chmod", "+x", mainLocation.split("/")[1]])
                     subprocess.run([f"./{mainLocation.split("/")[1]}"])
                 except KeyboardInterrupt:
