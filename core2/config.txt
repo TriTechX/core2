@@ -1,8 +1,8 @@
 [CoreOS Consistent Variables]
-PS1: ~ €
+PS1: ~ $
 UWP: False
 PASSENC: None
 NAMECOLOUR: [35m
 WELCOME: True
-VERSION: 0.0.1
+VERSION: 0.0.3
 REGION: GB
