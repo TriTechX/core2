@@ -15,6 +15,9 @@ import requests
 import zipfile
 import io
 import json
+from pygments import highlight
+from pygments.lexers import PythonLexer
+from pygments.formatters import TerminalFormatter
 #Third-party
 from dotenv import load_dotenv
 import psutil
@@ -35,11 +38,13 @@ else:
 
 sysDirs = ["sys", "boot", "opt", "root", "bin", "sbin", "lib32", "home",
            "media", "usr", "dev", "tmp", "srv", "libx32", "lib64", "etc", 
-           "var", "lib", "proc", "mnt", "run"]
+           "var", "lib", "proc", "mnt", "run", "cpm"]
+
+sysFiles = [".env", "colours.py", "config.txt", "core.py"]
 
 
 def clear():
-    print("\033[H\033[J", end="")
+    print("\033c", end="") 
 
 #Config functions
 def get_value(value):
@@ -164,10 +169,28 @@ def show_welcome():
             current_time = datetime.now().strftime("%m/%d/%Y %H:%M")
         print(f"Hello, {name_colour}{USER}{colours.reset()}!")
         print("------")
+        if not connected:
+            print(f"{colours.grey()}Offline mode{colours.reset()}")
         print(f"{colours.cyan()}Core{colours.magenta()}2{colours.reset()} Version: {colours.grey()}{VERSION}{colours.reset()}")
-        print(f"Date and time: {current_time}")
+        print(f"{colours.cyan()}Date{colours.reset()} and {colours.magenta()}time{colours.reset()}: {current_time}")
         print("------")
 
+#connection test
+def check_connection():
+    try:
+        url = "https://gist.githubusercontent.com/TriTechX/b89f0327f69d518fb71d307e768700a0/raw/216bc948f8e634dd40161b8f44c79e4a555e1447/url.txt"
+        content = requests.get(url)
+
+        if content.status_code == 200:
+            return True
+        else:
+            return False
+    except:
+        return False
+    
+connected = check_connection()
+
+#cpm
 def cpm_install_package(repo_name):
     exists, repo = cpm_locate_package(repo_name)
     
@@ -355,26 +378,79 @@ def confirm_response():
     else:
         return False
         
+def retrieve_config_values():
+    PS1 = get_value("PS1")
+    shell_ps1 = PS1 + " "
+    UWP = get_value("UWP")
+    PASSENC = get_value("PASSENC")
+    NAMECOLOUR = get_value("NAMECOLOUR")
+    WELCOME = get_value("WELCOME")
+    VERSION = get_value("VERSION")
+    REGION = get_value("REGION")
+    USER = get_value("USER")
+
+    return PS1, shell_ps1, UWP, PASSENC, NAMECOLOUR, WELCOME, VERSION, REGION, USER
+
+
+def retrieve_messages():
+    try:
+        url = "https://gist.github.com/TriTechX/2c0c13e83870f52b10d7b7f92277671b/raw"
+        message = requests.get(url)
+        messageContent = message.content.decode().strip(" ").strip("\n")
+
+        print(messageContent)
+    except Exception as e:
+        print(f"Error: {e}")
+
+def read_contents(path, highlighted):
+
+    try:
+        if path.split(".")[1] == "py":
+            python = True
+        else:
+            python = False
+    except:
+        python = False
+
+    try:
+        f = open(path,"r")
+        contents=  f.read().strip("\n")
+        f.close()
+
+        if contents == "":
+            return "empty"
+        else:
+            if python and highlighted:
+                highlighted_code = highlight(contents, PythonLexer(), TerminalFormatter())
+                return highlighted_code
+            else:
+                return contents
+    except:
+        return False
+
+def delete(filename, showmessage):
+    try:
+        if os.path.exists(filename):
+            if os.path.isfile(filename):
+                os.remove(filename)
+            else:
+                shutil.rmtree(filename)
+
+            if showmessage == True:
+                print(f"Deleted '{filename}' successfully.")
+            
+            return True
+        else:
+            if showmessage == True:
+                print(f"Path '{filename}' does not exist.")
+            return False
+    except:
+        if showmessage == True:
+            print(f"An error occurred removing '{filename}'.")
+        return None
+
 show_welcome()
-
-commands = {
-    "clear": lambda: clear_terminal(),
-    "cls": lambda: clear_terminal(),
-    "cl": lambda: clear_terminal(),
-    "c": lambda: clear_terminal(),
-    "chpass": lambda: change_password(),
-    "rmpass": lambda: remove_password(),
-    "welcome": lambda: toggle_welcome_message(),
-    "cd": lambda: change_directory(),
-    "quit": lambda: sys.exit(),
-    "exit": lambda: sys.exit(),
-    "clock": lambda: clock(),
-    "ls": lambda: list_directory(),
-    "dir": lambda: list_directory(),
-    "pip": lambda: use_pip(),
-    "cpm": lambda: use_cpm()
-}
-
+### COMMAND SECTION ###
 def clear_terminal():
     clear()
     show_welcome()
@@ -412,6 +488,7 @@ def toggle_welcome_message():
         print("Welcome message enabled.")
 
 def change_directory():
+    """Changes the directory"""
     if not args:
         print("Please type the name of the directory.")
         temp = input(shell_ps1)
@@ -423,6 +500,7 @@ def change_directory():
         print(f"The directory '{colours.bold()}{temp}{colours.reset()}' does not exist.")
 
 def clock():
+    """Prints the time until interrupted"""
     while True:
         current_time = datetime.now().strftime("%H:%M:%S")
         sys.stdout.write(f'\r{current_time}')
@@ -439,6 +517,7 @@ def clock():
             clear()
 
 def convert_size(bytes):
+    """Converts file sizes to their appropriate prefix alternatives"""
     try:
         power = math.log(bytes, 1024)
         suffixes = ["B", "kB", "MB", "GB", "TB"]
@@ -458,6 +537,7 @@ def convert_size(bytes):
     return output
 
 def dir_size(path):
+    """Calculates the size of a directory"""
     try:
         total_size = 0
         for dirpath, dirnames, filenames in os.walk(path):
@@ -472,6 +552,7 @@ def dir_size(path):
 
 
 def list_directory():
+    """Output of the ls command"""
     try:
         if args:
             hostDir = args[0]
@@ -491,25 +572,33 @@ def list_directory():
 
         print(f"🗀  Directory: '{colours.green()}{colours.bold()}{hostDirName}{colours.reset()}'")
         print("------")
-        buffer = []
-        for item in contents:
-            if os.path.isfile(item):
-                size = convert_size(os.path.getsize(item))
-                buffer.append("🗎 - " + colours.cyan() + item + colours.reset() + f" - {size}")
-            else:
-                size = convert_size(dir_size(item))
-                if item not in sysDirs:
-                    buffer.append("🗀  - " + colours.bold() + colours.magenta() + item + colours.reset() + f" - {size}")
+        if contents:
+            buffer = []
+            for item in contents:
+                if os.path.isfile(item):
+                    size = convert_size(os.path.getsize(item))
+                    
+                    if item not in sysFiles:
+                        buffer.append("🗎 - " + colours.cyan() + item + colours.reset() + f" - {size}")
+                    else:
+                        buffer.append("🗎 - " + colours.cyan() + colours.greenBg() + item + colours.reset() + f" - {size}")
                 else:
-                    buffer.append("🗀  - " + colours.bold() + colours.magenta() + colours.dgreenBg() + item + colours.reset() + f" - {size}")
-        output = "\n".join(buffer)
-        print(output)
+                    size = convert_size(dir_size(item))
+                    if item not in sysDirs:
+                        buffer.append("🗀  - " + colours.bold() + colours.magenta() + item + colours.reset() + f" - {size}")
+                    else:
+                        buffer.append("🗀  - " + colours.bold() + colours.magenta() + colours.dgreenBg() + item + colours.reset() + f" - {size}")
+            output = "\n".join(buffer)
+            print(output)
+        else:
+            print(f"{colours.grey()}This folder is empty.{colours.reset()}")
         print("------")
     except:
         print(f"The directory '{colours.bold()}{hostDir}{colours.reset()}' does not exist.")
 
 
 def use_pip():
+    """pip through the console"""
     if args:
         argsStr = " ".join(args)
         os.system(f"pip {argsStr}")
@@ -517,6 +606,7 @@ def use_pip():
         print("USAGE: pip <args> <package>\nInstalls packages for use with Python applications.")
 
 def use_cpm():
+    """Core package manager runner"""
     old = os.getcwd()
     if args:
         if args[0] == "install":
@@ -568,26 +658,232 @@ def use_cpm():
     else:
         print("USAGE: cpm <args> <package>\nInstalls packages using the Core package manager repository.")
 
-def retrieve_config_values():
-    PS1 = get_value("PS1")
-    shell_ps1 = PS1 + " "
-    UWP = get_value("UWP")
-    PASSENC = get_value("PASSENC")
-    NAMECOLOUR = get_value("NAMECOLOUR")
-    WELCOME = get_value("WELCOME")
-    VERSION = get_value("VERSION")
-    REGION = get_value("REGION")
-    USER = get_value("USER")
+def read_file():
+    print("------")
 
-    return PS1, shell_ps1, UWP, PASSENC, NAMECOLOUR, WELCOME, VERSION, REGION, USER
+    if args:
+        contentsExists = os.path.exists(args[0])
+        if contentsExists:
+            if len(args) > 1:
+                if args[1].lower() == "h":
+                    contents = read_contents(args[0], True)
+                else:
+                    contents = read_contents(args[0], False)
+            else:
+                contents = read_contents(args[0], False)
+
+
+            if contents:
+                print(contents)
+            else:
+                print("File does not exist.")
+        else:
+            print("File does not exist.")
+        
+    else:
+        print("Which file do you want to read?")
+        list_directory()
+
+        valid = False
+
+        while not valid:
+            filename = input(shell_ps1)
+
+            if os.path.exists(filename):
+                contents = read_contents(filename)
+                print(contents)
+                valid = True
+            else:
+                print("File does not exist.")
+    print("------")
+
+def remove_file():
+    if args:
+        delete(args[0], True)
+    else:
+        print("Which file do you want to delete?")
+        list_directory()
+
+        valid = False
+
+        while not valid:
+            filename = input(shell_ps1)
+
+            if not os.path.exists(filename):
+                print("Path does not exist.")
+            else:
+                valid = True
+
+        delete(filename, True)
+
+def create_file():
+    if args:
+        filename = args[0].strip()
+    else:
+        filename = input(f"What should the new file be called?\n{shell_ps1}").strip()
+
+    if filename in os.listdir():
+        print(f"File '{filename}' already exists.")
+        return
+
+    # Check if filename has an extension
+    if "." in filename and filename.rsplit(".", 1)[1]:  # Ensures there's an extension after "."
+        newFilename = filename
+    else:
+        newFilename = filename + ".txt"
+
+    if newFilename in os.listdir():
+        print(f"File '{newFilename}' already exists.")
+    else:
+        open(newFilename, "w").close()
+        print(f"File '{newFilename}' created successfully.")
+
+def core_help():
+    buffer = []
+    buffer.append(f"{colours.bold()}------{colours.reset()}")
+    buffer.append(f"{colours.bold()}{colours.italics()}Terminal commands{colours.reset()}:")
+    buffer.append(f"{colours.bold()}------{colours.reset()}")
+    buffer.append(f"welcome - toggle the welcome message.")
+    buffer.append("---")
+    buffer.append(f"clear - clears the terminal.")
+    buffer.append("---")
+    buffer.append("clock - display the current time until cancelled.")
+    buffer.append("---")
+    buffer.append("message - buffer.append the message from the developer.")
+    buffer.append("---")
+    buffer.append(f"{colours.bold()}sys{colours.reset()} - interact with your system's terminal")
+    buffer.append("---")
+    buffer.append(f"{colours.grey()}quit{colours.reset()} - quit Core2")
+    buffer.append(f"{colours.bold()}------{colours.reset()}")
+    buffer.append(f"{colours.bold()}{colours.italics()}{colours.red()}User management{colours.reset()}:")
+    buffer.append("---")
+    buffer.append(f"{colours.red()}chpass{colours.reset()} - changes the user password, creates if it doesn't exist.")
+    buffer.append("---")
+    buffer.append(f"{colours.red()}rmpass{colours.reset()} - remove the user password.")
+    buffer.append(f"{colours.bold()}------{colours.reset()}")
+    buffer.append(f"{colours.green()}{colours.bold()}{colours.italics()}Directory management{colours.reset()}:")
+    buffer.append("---")
+    buffer.append(f"{colours.green()}cd <dir>{colours.reset()} - changes the current working directory.")
+    buffer.append("---")
+    buffer.append(f"{colours.green()}ls <dir>{colours.reset()} - list the directory.")
+    buffer.append(f"{colours.bold()}------{colours.reset()}")
+    buffer.append(f"{colours.bold()}{colours.italics()}{colours.cyan()}Package management{colours.reset()}:")
+    buffer.append("---")
+    buffer.append(f"{colours.yellow()}pip{colours.reset()} - use Python's package manager, works as expected.")
+    buffer.append("---")
+    buffer.append(f"{colours.cyan()}cpm <arg> <packageName>{colours.reset()} - use Core2's package manager.")
+    buffer.append(f"{colours.bold()}------{colours.reset()}")
+    buffer.append(f"{colours.orange()}{colours.bold()}{colours.italics()}File management{colours.reset()}:")
+    buffer.append("---")
+    buffer.append(f"{colours.orange()}read <h>{colours.reset()} - read a file.")
+    buffer.append("---")
+    buffer.append(f"{colours.orange()}rm <file>{colours.reset()} - delete a file.")
+    buffer.append("---")
+    buffer.append(f"{colours.orange()}make <file>{colours.reset()} - make a file.")
+    buffer.append(f"{colours.bold()}------{colours.reset()}")
+
+
+    print("\n".join(buffer))
+
+def manual():
+    manual = {
+        "clear":"This command clears the screen. Alternatives include 'cls', 'cl', and 'c'.",
+        "chpass":"This command is used to change the user password, or create a new one if it does not exist. This command does not take arguments, but does ask for parameters, and is therefore not a smart command.",
+        "rmpass":"This command removes the current user password if it exists.",
+        "welcome":"This command is a boolean command that toggles the opening welcome message at the top of the screen upon clearing and starting up.",
+        "cd":"This command can be used to change the current working directory of the terminal. This command is a smart command.",
+        "quit":"This command quits Core2 and returns you back to your original environment. 'exit' may also be used.",
+        "clock":"This command is rather janky and needs some fixing, but it prints the current time to your screen until cancelled with [CTRL]+[C].",
+        "ls":"This command lists the contents of a directory. This command is a smart command.",
+        "pip":"This command interacts with the terminal Core2 is running within to use pip, Python's module/package manager.",
+        "cpm":"This is Core2's package manager.\n------\nValid arguments include:\n  install - install a cpm package\n  uninstall/remove - delete a cpm package\n  purge - remove ALL installed cpm packages\n  meta - get the meta.json contents for a cpm package\n  fix - remove any temporary or broken cpm packages\n---\n'cpm install corebench' - installs the corebench module, and can be executed through the terminal by typing 'corebench'\n'cpm uninstall corebench' - removes the package from the environment. Can be reinstalled again.\n'cpm meta totked' - gets the contents of the meta file for 'totked'\n------",
+        "read":"This command extracts the raw contents of a file and prints them to the screen. Recommended for use with text and code files. Add the argument 'h' to the end of the command to prind the contents of a file with Python syntax highlighting.\n---\nexample: 'read core.py h'\n------",
+        "rm":"This command deletes a file from a given path. This command is a smart command.",
+        "make":"This command makes a file. If no file extension is provided, it will default to '.txt'. This command is a smart command.",
+        "man":"Haha. Very funny. You typed 'man man' in the terminal because you thought it would break. It's not that complicated anymore. What's funny is that this doesn't use any importlib or bin folder with functions. It just sits in a dictionary. I gave up. It was too jank."
+    }
+
+    manualCommands = manual.keys()
+
+    if args:
+        commandName = args[0]
+        if commandName in manualCommands:
+            print(manual[commandName])
+        else:
+            print(f"Command '{args[0]}' does not exist.")
+    else:
+        valid = False
+
+        print("Which command do you want the manual for?")
+        while not valid:
+            commandName = input(shell_ps1)
+
+            if commandName in manualCommands:
+                print(manual[commandName])
+                valid = True
+            else:
+                print(f"Command '{commandName}' does not exist.")
+                valid = False
+
+def use_nano():
+    os.system(f"nano {" ".join(args)}")
+
+def use_system():
+    os.system(f"{" ".join(args)}")
+
+commands = {
+    "clear": clear_terminal,
+    "cls": clear_terminal,
+    "cl": clear_terminal,
+    "c": clear_terminal,
+
+    "chpass": change_password,
+    "rmpass": remove_password,
+
+    "welcome": toggle_welcome_message,
+
+    "cd": change_directory,
+
+    "quit": sys.exit,
+    "exit": sys.exit,
+
+    "clock": clock,
+
+    "ls": list_directory,
+    "dir": list_directory,
+
+    "pip": use_pip,
+
+    "cpm": use_cpm,
+
+    "message":retrieve_messages,
+
+    "read":read_file,
+    "rm":remove_file, #takes argument 'h' to return highlighted syntax
+
+    "make":create_file,
+
+    "help":core_help,
+    "man":manual,
+
+    "nano":use_nano,
+    "sys":use_system,
+
+}
+
 while True:
+    connected = check_connection()
+
     args = None
 
     PS1, shell_ps1, UWP, PASSENC, NAMECOLOUR, temp, VERSION, REGION, USER = retrieve_config_values()
 
     WELCOME = get_or_add_value("WELCOME", "True")
+    
     cwd = os.getcwd()
+
     temp = input(colours.bold() + colours.cyan() + cwd + " " + colours.reset() + shell_ps1)
+    
     commandList = temp.strip().split(" ")
     commandcap = commandList[0]
     command = commandList[0].lower()
@@ -601,7 +897,7 @@ while True:
             os.chdir(oldDir)
             print(f"\n{colours.red()}Action cancelled.{colours.reset()}")
         
-    else:
+    else: #look for externals
         try:
             old = os.getcwd()
             externals = os.listdir(f"{homeDir}/cpm")
@@ -616,6 +912,8 @@ while True:
                     subprocess.run([f"./{mainLocation.split("/")[1]}"])
                 except KeyboardInterrupt:
                     print(f"{colours.red()}Action cancelled{colours.reset()}")
+            else:
+                print("Command not installed.")
         except Exception as e:
             print(str(e))
             pass #command not found
